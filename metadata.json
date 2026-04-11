@@ -1,0 +1,5 @@
+{
+  "name": "Web IDE",
+  "description": "A fully functional web-based IDE with Monaco Editor, intellisense, and file management.",
+  "requestFramePermissions": []
+}
