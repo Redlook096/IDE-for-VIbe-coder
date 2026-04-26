@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Files, Search, Settings, User, X, Plus, 
   Play, TerminalSquare, Terminal as TerminalIcon, LayoutPanelLeft, PanelBottom, PanelRight, 
-  Bell, ChevronRight, ChevronDown, MoreHorizontal, SplitSquareHorizontal, Trash2, Sparkles, Edit2, Info, HardDrive, Code2,
+  Bell, ChevronRight, ChevronDown, MoreHorizontal, SplitSquareHorizontal, Trash2, Edit2, Info, HardDrive, Code2,
   RotateCw, Lock, ChevronLeft
 } from 'lucide-react';
 import Editor, { useMonaco } from '@monaco-editor/react';
@@ -186,7 +186,13 @@ export default function App() {
     if (file.language === 'json') {
       return `<html><body style="font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; white-space: pre-wrap;">${file.content}</body></html>`;
     }
-    return `<html><body style="font-family: system-ui, sans-serif; padding: 20px;"><h3>Preview not available for ${file.language}</h3></body></html>`;
+    return `<html><body style="font-family: system-ui, sans-serif; padding: 40px; background: #09090b; color: #a1a1aa; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center;">
+      <div style="background: #18181b; padding: 30px; border-radius: 12px; border: 1px solid #27272a; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
+        <h3 style="color: #f4f4f5; margin-top: 0; margin-bottom: 8px; font-size: 18px; font-weight: 600;">Preview not available for ${file.language}</h3>
+        <p style="margin: 0; font-size: 14px; line-height: 1.5;">Vibe code with the AI to build a frontend interface or run this code in the terminal below.</p>
+      </div>
+    </body></html>`;
   };
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
@@ -214,7 +220,7 @@ export default function App() {
     id: string;
     type: 'cmd' | 'powershell' | 'bash';
     name: string;
-    history: {type: 'input'|'output', text: string}[];
+    history: {type: 'input'|'output', text: string, isError?: boolean}[];
     input: string;
   };
 
@@ -306,20 +312,31 @@ export default function App() {
                      
       // Execute mock
       let outputText = '';
+      let isError = false;
       if (activeFile.language === 'python') {
-        const lines = activeFile.content.split('\n');
-        for (const line of lines) {
-          const stringMatch = line.match(/print\s*\(\s*(['"])(.*?)\1\s*\)/);
-          if (stringMatch) {
-            outputText += stringMatch[2] + '\n';
-            continue;
+        try {
+          const lines = activeFile.content.split('\n');
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            // Simple syntax check for python mock
+            if (!line.startsWith('print') && !line.includes('=') && !line.startsWith('def') && !line.startsWith('import') && !line.startsWith('from') && !line.startsWith('#')) {
+              throw new Error(`SyntaxError: invalid syntax at '${line.trim()}'`);
+            }
+            const stringMatch = line.match(/print\s*\(\s*(['"])(.*?)\1\s*\)/);
+            if (stringMatch) {
+              outputText += stringMatch[2] + '\n';
+              continue;
+            }
+            const varMatch = line.match(/print\s*\(\s*([^'"]+?)\s*\)/);
+            if (varMatch) {
+              outputText += `[Value of ${varMatch[1]}]\n`;
+            }
           }
-          const varMatch = line.match(/print\s*\(\s*([^'"]+?)\s*\)/);
-          if (varMatch) {
-            outputText += `[Value of ${varMatch[1]}]\n`;
-          }
+          if (!outputText) outputText = '(No output)\n';
+        } catch (e: any) {
+          outputText = e.toString() + '\n';
+          isError = true;
         }
-        if (!outputText) outputText = '(No output)\n';
       } else if (activeFile.language === 'javascript' || activeFile.language === 'typescript') {
         let captured = '';
         const originalLog = console.log;
@@ -329,6 +346,7 @@ export default function App() {
           eval(activeFile.content);
         } catch (e: any) {
           captured += e.toString() + '\n';
+          isError = true;
         }
         console.log = originalLog;
         outputText = captured || '(No output)\n';
@@ -344,7 +362,7 @@ export default function App() {
             history: [
               ...t.history,
               { type: 'input', text: `${prompt}${runCmd}` },
-              { type: 'output', text: outputText.trim() }
+              { type: 'output', text: outputText.trim(), isError }
             ]
           };
         }
@@ -718,10 +736,13 @@ export default function App() {
                          'luke@lyra-ai:~/workspace$';
 
   return (
-    <div className="flex flex-col h-screen w-full bg-zinc-950 text-zinc-300 font-sans overflow-hidden selection:bg-zinc-800">
-      {/* Title Bar */}
-      <div className="flex items-center justify-between h-[36px] bg-zinc-950 px-3 text-[13px] select-none shrink-0 border-b border-zinc-800/50 relative">
-        <div className="flex items-center space-x-4 z-10">
+    <div className="flex h-screen w-full bg-[#09090b] text-zinc-300 font-sans overflow-hidden selection:bg-zinc-800">
+      
+      {/* IDE */}
+      <div className="flex flex-col flex-1 overflow-hidden relative bg-zinc-950">
+        {/* Title Bar */}
+        <div className="flex items-center h-[36px] bg-zinc-950 px-3 text-[13px] select-none shrink-0 border-b border-zinc-800/50">
+        <div className="flex items-center space-x-4 z-10 flex-1">
           <div className="flex space-x-1 text-zinc-400" onClick={(e) => e.stopPropagation()}>
             {Object.entries(menus).map(([menuName, items]) => (
               <div key={menuName} className="relative">
@@ -753,92 +774,143 @@ export default function App() {
           </div>
         </div>
         
-        {/* Centered Project Name Button */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex justify-center z-10" ref={projectDropdownRef}>
-          <div 
-            className="flex items-center justify-center bg-transparent hover:bg-zinc-800/50 border border-transparent hover:border-zinc-700/50 rounded-md px-4 py-1 shadow-sm cursor-pointer transition-colors group"
-            onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
-          >
-            <span className="text-[12px] font-medium text-zinc-300 mr-2">{projectName}</span>
-            <ChevronDown className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-          </div>
-          
-          {projectDropdownOpen && (
-            <div className="absolute top-full mt-2 w-72 bg-zinc-950 border border-zinc-800 shadow-2xl rounded-lg z-50 overflow-hidden">
-              <div className="p-4 border-b border-zinc-800/50 bg-zinc-950">
-                {isRenamingProject ? (
-                  <input 
-                    autoFocus
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    onBlur={() => setIsRenamingProject(false)}
-                    onKeyDown={(e) => e.key === 'Enter' && setIsRenamingProject(false)}
-                    className="bg-zinc-950 border border-zinc-700 text-zinc-100 text-[13px] font-medium rounded px-2 py-1 w-full outline-none focus:border-zinc-500"
-                  />
-                ) : (
-                  <h3 className="text-zinc-100 font-medium text-[14px] flex items-center justify-between">
-                    {projectName}
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setIsRenamingProject(true); }}
-                      className="text-zinc-500 hover:text-zinc-300 bg-zinc-800/50 hover:bg-zinc-700/50 p-1 rounded transition-colors"
-                      title="Rename Project"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                  </h3>
-                )}
-                
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Description</span>
-                    {!isRenamingDescription && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setIsRenamingDescription(true); }}
-                        className="text-[10px] flex items-center text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded transition-colors"
-                      >
-                        <Edit2 className="w-3 h-3 mr-1" /> Edit
-                      </button>
-                    )}
-                  </div>
-                  {isRenamingDescription ? (
-                    <textarea 
+        {/* Centered Elements */}
+        <div className="flex items-center justify-center space-x-6 z-10 flex-shrink-0">
+          {/* Project Name Button */}
+          <div className="relative" ref={projectDropdownRef}>
+            <div 
+              className="flex items-center justify-center bg-transparent hover:bg-zinc-800/50 border border-transparent hover:border-zinc-700/50 rounded-md px-4 py-1 shadow-sm cursor-pointer transition-colors group"
+              onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
+            >
+              <span className="text-[12px] font-medium text-zinc-300 mr-2">{projectName}</span>
+              <ChevronDown className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+            </div>
+            
+            {projectDropdownOpen && (
+              <div className="absolute top-full mt-2 w-72 bg-zinc-950 border border-zinc-800 shadow-2xl rounded-lg z-50 overflow-hidden left-1/2 -translate-x-1/2">
+                <div className="p-4 border-b border-zinc-800/50 bg-zinc-950">
+                  {isRenamingProject ? (
+                    <input 
                       autoFocus
-                      value={projectDescription}
-                      onChange={(e) => setProjectDescription(e.target.value)}
-                      onBlur={() => setIsRenamingDescription(false)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          setIsRenamingDescription(false);
-                        }
-                      }}
-                      className="bg-zinc-950 border border-zinc-700 text-zinc-300 text-[12px] rounded px-2 py-1.5 w-full outline-none focus:border-zinc-500 resize-none h-16 shadow-inner"
-                      placeholder="Enter project description..."
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                      onBlur={() => setIsRenamingProject(false)}
+                      onKeyDown={(e) => e.key === 'Enter' && setIsRenamingProject(false)}
+                      className="bg-zinc-950 border border-zinc-700 text-zinc-100 text-[13px] font-medium rounded px-2 py-1 w-full outline-none focus:border-zinc-500"
                     />
                   ) : (
-                    <p className="text-zinc-400 text-[12px] leading-relaxed bg-zinc-900/50 rounded p-2 border border-zinc-800/50 min-h-[40px]">
-                      {projectDescription || <span className="italic text-zinc-600">No description provided.</span>}
-                    </p>
+                    <h3 className="text-zinc-100 font-medium text-[14px] flex items-center justify-between">
+                      {projectName}
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setIsRenamingProject(true); }}
+                        className="text-zinc-500 hover:text-zinc-300 bg-zinc-800/50 hover:bg-zinc-700/50 p-1 rounded transition-colors"
+                        title="Rename Project"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    </h3>
                   )}
+                  
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Description</span>
+                      {!isRenamingDescription && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setIsRenamingDescription(true); }}
+                          className="text-[10px] flex items-center text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded transition-colors"
+                        >
+                          <Edit2 className="w-3 h-3 mr-1" /> Edit
+                        </button>
+                      )}
+                    </div>
+                    {isRenamingDescription ? (
+                      <textarea 
+                        autoFocus
+                        value={projectDescription}
+                        onChange={(e) => setProjectDescription(e.target.value)}
+                        onBlur={() => setIsRenamingDescription(false)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            setIsRenamingDescription(false);
+                          }
+                        }}
+                        className="bg-zinc-950 border border-zinc-700 text-zinc-300 text-[12px] rounded px-2 py-1.5 w-full outline-none focus:border-zinc-500 resize-none h-16 shadow-inner"
+                        placeholder="Enter project description..."
+                      />
+                    ) : (
+                      <p className="text-zinc-400 text-[12px] leading-relaxed bg-zinc-900/50 rounded p-2 border border-zinc-800/50 min-h-[40px]">
+                        {projectDescription || <span className="italic text-zinc-600">No description provided.</span>}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="p-2">
+                  <div className="flex items-center px-3 py-2 text-[12px] text-zinc-400">
+                    <HardDrive className="w-3.5 h-3.5 mr-2" />
+                    <span>Project Size: </span>
+                    <span className="text-zinc-300 ml-1 font-mono">24.5 MB</span>
+                  </div>
+                  <div className="flex items-center px-3 py-2 text-[12px] text-zinc-400">
+                    <Info className="w-3.5 h-3.5 mr-2" />
+                    <span>Files: </span>
+                    <span className="text-zinc-300 ml-1 font-mono">{files.length}</span>
+                  </div>
                 </div>
               </div>
-              <div className="p-2">
-                <div className="flex items-center px-3 py-2 text-[12px] text-zinc-400">
-                  <HardDrive className="w-3.5 h-3.5 mr-2" />
-                  <span>Project Size: </span>
-                  <span className="text-zinc-300 ml-1 font-mono">24.5 MB</span>
-                </div>
-                <div className="flex items-center px-3 py-2 text-[12px] text-zinc-400">
-                  <Info className="w-3.5 h-3.5 mr-2" />
-                  <span>Files: </span>
-                  <span className="text-zinc-300 ml-1 font-mono">{files.length}</span>
-                </div>
+            )}
+          </div>
+
+          {files.length > 0 && (
+            <>
+              {/* Code / Preview Toggle */}
+              <div className="flex items-center bg-black border border-zinc-800 rounded p-0.5">
+                <button 
+                  onClick={() => setPreviewOpen(false)}
+                  className={`flex items-center px-3 py-1 text-[11px] font-medium rounded-sm transition-colors ${!previewOpen ? 'bg-zinc-800 text-zinc-100' : 'bg-black text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
+                >
+                  <Code2 className="w-3.5 h-3.5 mr-1.5" />
+                  Code
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!previewOpen) {
+                      if (!activeFileId && files.length > 0) handlePlay();
+                      else if (activeFileId) { setPreviewMode('full'); setPreviewOpen(true); }
+                    }
+                  }}
+                  className={`flex items-center px-3 py-1 text-[11px] font-medium rounded-sm transition-colors ${previewOpen ? 'bg-zinc-800 text-zinc-100' : 'bg-black text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
+                >
+                  <Play className="w-3.5 h-3.5 mr-1.5" />
+                  Preview
+                </button>
               </div>
-            </div>
+
+              {/* Preview Controls (Refresh, Split) - Always rendered to prevent layout shift, but hidden when not in preview */}
+              <div className={`flex items-center space-x-1 transition-opacity duration-200 ${previewOpen ? 'opacity-100' : 'opacity-0 pointer-events-none w-0 overflow-hidden'}`}>
+                <button 
+                  onClick={() => {
+                    const iframe = document.getElementById('live-preview-iframe') as HTMLIFrameElement;
+                    if (iframe) iframe.srcdoc = iframe.srcdoc;
+                  }}
+                  className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+                  title="Refresh"
+                >
+                  <RotateCw className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => setPreviewMode(previewMode === 'split' ? 'full' : 'split')}
+                  className={`p-1.5 rounded transition-colors ${previewMode === 'split' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
+                  title={previewMode === 'split' ? "Full Width" : "Split View"}
+                >
+                  <SplitSquareHorizontal className="w-4 h-4" />
+                </button>
+              </div>
+            </>
           )}
         </div>
 
-        <div className="flex items-center space-x-3 text-zinc-500 z-10">
+        <div className="flex items-center justify-end space-x-3 text-zinc-500 z-10 flex-1">
           <div 
             className={`flex items-center justify-center px-2 py-1 rounded transition-colors ${files.length > 0 ? 'bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400 cursor-pointer' : 'bg-zinc-800/30 text-zinc-600 cursor-not-allowed'}`}
             onClick={files.length > 0 ? handlePlay : undefined}
@@ -887,7 +959,7 @@ export default function App() {
 
         {/* Sidebar */}
         {sidebarOpen && (
-          <div className="w-[260px] bg-zinc-950 flex flex-col shrink-0 border-t border-r border-zinc-800/50">
+          <div className="w-[260px] bg-zinc-950 flex flex-col shrink-0 border-t border-r border-zinc-800/50 transition-all duration-200">
             <div className="flex items-center justify-between px-4 h-[40px] text-[11px] font-medium uppercase tracking-widest text-zinc-500">
               <span>{activeSidebarTab === 'explorer' ? 'Explorer' : 'Search'}</span>
               <MoreHorizontal className="w-4 h-4 cursor-pointer hover:text-zinc-200 transition-colors" />
@@ -993,41 +1065,45 @@ export default function App() {
           {openFileIds.length > 0 ? (
             <>
               {/* Editor Tabs */}
-              <div className="flex h-[40px] bg-zinc-900/50 overflow-x-auto scrollbar-hide shrink-0 border-b border-zinc-800/50">
-                {openFileIds.map(id => {
-                  const file = files.find(f => f.id === id);
-                  if (!file) return null;
-                  const isActive = activeFileId === id;
-                  return (
-                    <div 
-                      key={id}
-                      onClick={() => setActiveFileId(id)}
-                      className={`flex items-center h-full px-4 min-w-fit cursor-pointer border-r border-zinc-800/50 group transition-colors ${isActive ? 'bg-zinc-950 text-zinc-100 border-t-2 border-t-zinc-100' : 'bg-transparent text-zinc-500 hover:bg-zinc-800/30 hover:text-zinc-300 border-t-2 border-t-transparent'}`}
-                    >
-                      {getFileIcon(file.name, `w-3.5 h-3.5 mr-2 shrink-0 ${isActive ? 'opacity-100' : 'opacity-70'}`)}
-                      <span className="text-[13px] mr-2">{file.name}</span>
+              {!(previewOpen && previewMode === 'full') && (
+                <div className="flex h-[40px] bg-zinc-900/50 overflow-x-auto scrollbar-hide shrink-0 border-b border-zinc-800/50">
+                  {openFileIds.map(id => {
+                    const file = files.find(f => f.id === id);
+                    if (!file) return null;
+                    const isActive = activeFileId === id;
+                    return (
                       <div 
-                        className={`p-0.5 rounded-md hover:bg-zinc-700 hover:text-zinc-100 transition-colors ${isActive ? 'opacity-100 text-zinc-400' : 'opacity-0 group-hover:opacity-100 text-zinc-500'}`}
-                        onClick={(e) => closeFile(e, id)}
+                        key={id}
+                        onClick={() => setActiveFileId(id)}
+                        className={`flex items-center h-full px-4 min-w-fit cursor-pointer border-r border-zinc-800/50 group transition-colors ${isActive ? 'bg-zinc-950 text-zinc-100 border-t-2 border-t-zinc-100' : 'bg-transparent text-zinc-500 hover:bg-zinc-800/30 hover:text-zinc-300 border-t-2 border-t-transparent'}`}
                       >
-                        <X className="w-3.5 h-3.5" />
+                        {getFileIcon(file.name, `w-3.5 h-3.5 mr-2 shrink-0 ${isActive ? 'opacity-100' : 'opacity-70'}`)}
+                        <span className="text-[13px] mr-2">{file.name}</span>
+                        <div 
+                          className={`p-0.5 rounded-md hover:bg-zinc-700 hover:text-zinc-100 transition-colors ${isActive ? 'opacity-100 text-zinc-400' : 'opacity-0 group-hover:opacity-100 text-zinc-500'}`}
+                          onClick={(e) => closeFile(e, id)}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
               
               {/* Breadcrumbs */}
-              <div className="flex items-center h-[26px] px-5 text-[12px] text-zinc-500 bg-zinc-950 shrink-0 border-b border-zinc-800/30">
-                {activeFile && (
-                  <>
-                    <span className="hover:text-zinc-300 cursor-pointer transition-colors">Workspace</span>
-                    <ChevronRight className="w-3.5 h-3.5 mx-1.5 opacity-50" />
-                    {getFileIcon(activeFile.name, "w-3.5 h-3.5 mr-1.5 shrink-0 opacity-70")}
-                    <span className="text-zinc-300">{activeFile.name}</span>
-                  </>
-                )}
-              </div>
+              {!(previewOpen && previewMode === 'full') && (
+                <div className="flex items-center h-[26px] px-5 text-[12px] text-zinc-500 bg-zinc-950 shrink-0 border-b border-zinc-800/30">
+                  {activeFile && (
+                    <>
+                      <span className="hover:text-zinc-300 cursor-pointer transition-colors">Workspace</span>
+                      <ChevronRight className="w-3.5 h-3.5 mx-1.5 opacity-50" />
+                      {getFileIcon(activeFile.name, "w-3.5 h-3.5 mr-1.5 shrink-0 opacity-70")}
+                      <span className="text-zinc-300">{activeFile.name}</span>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Monaco Editor */}
               <div className="flex-1 relative flex min-h-0">
@@ -1049,32 +1125,6 @@ export default function App() {
                 )}
                 {previewOpen && (
                   <div className={`${previewMode === 'full' ? 'w-full' : 'w-1/2'} bg-white relative flex flex-col`}>
-                    <div className="absolute top-4 right-6 flex items-center space-x-1 bg-white/90 backdrop-blur border border-zinc-200 shadow-sm rounded-md p-1 z-10">
-                      <button 
-                        onClick={() => {
-                          const iframe = document.getElementById('live-preview-iframe') as HTMLIFrameElement;
-                          if (iframe) iframe.srcdoc = iframe.srcdoc;
-                        }}
-                        className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 rounded transition-colors"
-                        title="Refresh"
-                      >
-                        <RotateCw className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => setPreviewMode(previewMode === 'split' ? 'full' : 'split')}
-                        className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 rounded transition-colors"
-                        title={previewMode === 'split' ? "Full Width" : "Split View"}
-                      >
-                        <SplitSquareHorizontal className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => setPreviewOpen(false)}
-                        className="p-1.5 text-zinc-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                        title="Close Preview"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
                     <iframe 
                       id="live-preview-iframe"
                       srcDoc={getPreviewContent(activeFile)} 
@@ -1184,10 +1234,31 @@ export default function App() {
               <div className="flex-1 flex overflow-hidden min-h-0">
                 <div ref={terminalOutputRef} className="flex-1 overflow-y-auto p-4 font-mono text-[13px] text-zinc-300 bg-zinc-950" onClick={() => terminalInputRef.current?.focus()}>
                   {activeTerminal.history.map((line, i) => (
-                    <div key={i} className="whitespace-pre-wrap">{line.text}</div>
+                    <div key={i} className={`whitespace-pre-wrap ${line.isError ? 'text-red-400' : ''}`}>
+                      {line.type === 'input' && activeTerminal.type === 'bash' ? (
+                        <span>
+                          <span className="text-green-400">user@lyra</span>
+                          <span className="text-white">:</span>
+                          <span className="text-blue-400">~/workspace</span>
+                          <span className="text-white">$ </span>
+                          {line.text.split('$ ')[1] || line.text}
+                        </span>
+                      ) : (
+                        line.text
+                      )}
+                    </div>
                   ))}
                   <div className="flex">
-                    <span className="mr-2 text-zinc-300 whitespace-pre">{terminalPrompt}</span>
+                    {activeTerminal.type === 'bash' ? (
+                      <span className="mr-2 whitespace-pre">
+                        <span className="text-green-400">user@lyra</span>
+                        <span className="text-white">:</span>
+                        <span className="text-blue-400">~/workspace</span>
+                        <span className="text-white">$</span>
+                      </span>
+                    ) : (
+                      <span className="mr-2 text-zinc-300 whitespace-pre">{terminalPrompt}</span>
+                    )}
                     <input 
                       ref={terminalInputRef}
                       type="text" 
@@ -1224,10 +1295,16 @@ export default function App() {
                           )}
                         </div>
                         {editingTerminalId !== t.id && (
-                          <Trash2 
-                            className="w-3 h-3 ml-2 shrink-0 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity" 
-                            onClick={(e) => removeTerminal(e, t.id)}
-                          />
+                          <div className="flex items-center space-x-2 ml-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Edit2 
+                              className="w-3 h-3 text-zinc-500 hover:text-zinc-200" 
+                              onClick={(e) => startRenamingTerminal(e, t)}
+                            />
+                            <Trash2 
+                              className="w-3 h-3 text-zinc-500 hover:text-red-400" 
+                              onClick={(e) => removeTerminal(e, t.id)}
+                            />
+                          </div>
                         )}
                       </div>
                     ))}
@@ -1270,6 +1347,7 @@ export default function App() {
             <Bell className="w-3.5 h-3.5" />
           </span>
         </div>
+      </div>
       </div>
     </div>
   );
